@@ -34,9 +34,9 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
    ```bash
    kubectl create namespace radome
    ```
-3. **Kubeconfig**: Export the kubeconfig YAML into `RADOME_KUBE_CONFIG`:
+3. **Kubeconfig**: Point `RADOME_KUBE_CONFIG_PATH` at your kubeconfig file:
    ```bash
-   export RADOME_KUBE_CONFIG="$(cat ~/.kube/config)"
+   export RADOME_KUBE_CONFIG_PATH="$HOME/.kube/config"
    export RADOME_KUBE_NAMESPACE="radome"
    ```
 4. **Storage**: Ensure the `./data` directory is writable if you want persistence.
@@ -51,7 +51,7 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
 | `RADOME_PROXY_PORT` | `8080` | Port for the proxy that forwards traffic to instances. |
 | `RADOME_BASE_DOMAIN` | `radome.local` | Base domain for instance subdomains. |
 | `RADOME_KUBE_NAMESPACE` | `default` | Namespace for Radome-managed deployments/services. |
-| `RADOME_KUBE_CONFIG` | _required_ | Kubernetes kubeconfig YAML string (use `cat ~/.kube/config` to populate). |
+| `RADOME_KUBE_CONFIG_PATH` | _required_ | Path to your kubeconfig YAML file (for example `$HOME/.kube/config`). |
 | `RADOME_DB_PATH` | `./data/radome.db` | SQLite database path for users and images. |
 | `RADOME_ADMIN_USERNAME` | `admin` | Seed admin username. |
 | `RADOME_ADMIN_PASSWORD` | `radome` | Seed admin password. |
@@ -87,4 +87,4 @@ Visit `http://localhost:3001` (Next.js default) to sign in and manage instances,
 
 ## Notes
 
-This MVP expects `RADOME_KUBE_CONFIG` to be set and does not persist instance state across restarts.
+This MVP expects `RADOME_KUBE_CONFIG_PATH` to be set and does not persist instance state across restarts.
