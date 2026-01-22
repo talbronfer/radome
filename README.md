@@ -41,6 +41,8 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
    ```
 4. **Storage**: Ensure the `./data` directory is writable if you want persistence.
 
+5. **Environment file** (optional): Create a `.env` file in the repo root and set your variables there (loaded automatically).
+
 ### Configuration
 
 | Environment Variable | Default | Description |

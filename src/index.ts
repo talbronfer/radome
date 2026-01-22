@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import { compareSync, hashSync } from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
