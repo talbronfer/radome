@@ -18,6 +18,7 @@ type AllowedImage = {
   dockerHubUrl: string;
   defaultPort: number;
   description: string;
+  env: Record<string, string> | null;
 };
 
 type User = {
@@ -55,6 +56,21 @@ const fetchJson = async (path: string, options: RequestInit = {}) => {
 const classNames = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
 
+const parseEnvJson = (value: string) => {
+  const parsed = JSON.parse(value) as Record<string, unknown>;
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Environment variables must be an object.");
+  }
+  const envPayload: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (typeof entry !== "string") {
+      throw new Error("Environment variable values must be strings.");
+    }
+    envPayload[key] = entry;
+  }
+  return envPayload;
+};
+
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null);
   const [loginState, setLoginState] = useState({ username: "", password: "" });
@@ -67,6 +83,7 @@ export default function AdminPage() {
     dockerHubUrl: "",
     defaultPort: "",
     description: "",
+    env: "",
   });
   const [newUser, setNewUser] = useState({ username: "", password: "", role: "user" });
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +179,15 @@ export default function AdminPage() {
 
   const handleCreateImage = async () => {
     setError(null);
+    let envPayload: Record<string, string> | null = null;
+    if (newImage.env.trim()) {
+      try {
+        envPayload = parseEnvJson(newImage.env);
+      } catch (err) {
+        setError((err as Error).message || "Environment variables must be valid JSON.");
+        return;
+      }
+    }
     try {
       await fetchJson("/images", {
         method: "POST",
@@ -170,9 +196,10 @@ export default function AdminPage() {
           dockerHubUrl: newImage.dockerHubUrl,
           defaultPort: Number(newImage.defaultPort),
           description: newImage.description,
+          env: envPayload,
         }),
       });
-      setNewImage({ name: "", dockerHubUrl: "", defaultPort: "", description: "" });
+      setNewImage({ name: "", dockerHubUrl: "", defaultPort: "", description: "", env: "" });
       await loadData();
     } catch (err) {
       setError((err as Error).message);
@@ -192,12 +219,29 @@ export default function AdminPage() {
     }
     const description = prompt("Description", image.description);
     if (!description) return;
+    const envInput = prompt(
+      "Environment JSON (leave blank for none)",
+      image.env ? JSON.stringify(image.env) : "",
+    );
+    if (envInput === null) {
+      return;
+    }
+
+    let envPayload: Record<string, string> | null = null;
+    if (envInput.trim()) {
+      try {
+        envPayload = parseEnvJson(envInput);
+      } catch (err) {
+        setError((err as Error).message || "Environment variables must be valid JSON.");
+        return;
+      }
+    }
 
     setError(null);
     try {
       await fetchJson(`/images/${image.id}`, {
         method: "PUT",
-        body: JSON.stringify({ name, dockerHubUrl, defaultPort, description }),
+        body: JSON.stringify({ name, dockerHubUrl, defaultPort, description, env: envPayload }),
       });
       await loadData();
     } catch (err) {
@@ -379,6 +423,11 @@ export default function AdminPage() {
                     <p className="text-sm font-semibold text-white">{image.name}</p>
                     <p className="text-xs text-slate-400">{image.description}</p>
                     <p className="text-xs text-slate-400">Default port: {image.defaultPort}</p>
+                    {image.env && (
+                      <p className="text-xs text-slate-400">
+                        Env: {JSON.stringify(image.env)}
+                      </p>
+                    )}
                     <a
                       className="text-xs text-sky-300"
                       href={image.dockerHubUrl}
@@ -434,6 +483,13 @@ export default function AdminPage() {
               placeholder="Description"
               value={newImage.description}
               onChange={(event) => setNewImage({ ...newImage, description: event.target.value })}
+            />
+            <textarea
+              className="w-full rounded-xl border border-slate-700 bg-white px-4 py-2 text-sm"
+              placeholder='Env JSON (e.g. {"API_KEY":"value"})'
+              rows={3}
+              value={newImage.env}
+              onChange={(event) => setNewImage({ ...newImage, env: event.target.value })}
             />
             <button
               className="w-full rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white"

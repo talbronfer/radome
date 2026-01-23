@@ -111,8 +111,26 @@ app.get("/images", authenticate, (_req, res) => {
   });
 });
 
+const parseEnvInput = (env: unknown) => {
+  if (env === null || env === undefined) {
+    return null;
+  }
+  if (typeof env !== "object") {
+    return undefined;
+  }
+  const entries = Object.entries(env as Record<string, unknown>);
+  const record: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    record[key] = value;
+  }
+  return record;
+};
+
 app.post("/images", authenticate, requireAdmin, (req, res) => {
-  const { name, dockerHubUrl, defaultPort, description } = req.body ?? {};
+  const { name, dockerHubUrl, defaultPort, description, env } = req.body ?? {};
   if (
     typeof name !== "string" ||
     typeof dockerHubUrl !== "string" ||
@@ -123,8 +141,20 @@ app.post("/images", authenticate, requireAdmin, (req, res) => {
     return;
   }
 
+  const parsedEnv = parseEnvInput(env);
+  if (parsedEnv === undefined) {
+    res.status(400).json({ error: "env must be a string map" });
+    return;
+  }
+
   try {
-    const record = createAllowedImage({ name, dockerHubUrl, defaultPort, description });
+    const record = createAllowedImage({
+      name,
+      dockerHubUrl,
+      defaultPort,
+      description,
+      env: parsedEnv,
+    });
     res.status(201).json({ image: record });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -133,7 +163,7 @@ app.post("/images", authenticate, requireAdmin, (req, res) => {
 
 app.put("/images/:id", authenticate, requireAdmin, (req, res) => {
   const id = Number(req.params.id);
-  const { name, dockerHubUrl, defaultPort, description } = req.body ?? {};
+  const { name, dockerHubUrl, defaultPort, description, env } = req.body ?? {};
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: "invalid id" });
     return;
@@ -149,7 +179,19 @@ app.put("/images/:id", authenticate, requireAdmin, (req, res) => {
     return;
   }
 
-  const record = updateAllowedImage(id, { name, dockerHubUrl, defaultPort, description });
+  const parsedEnv = parseEnvInput(env);
+  if (parsedEnv === undefined) {
+    res.status(400).json({ error: "env must be a string map" });
+    return;
+  }
+
+  const record = updateAllowedImage(id, {
+    name,
+    dockerHubUrl,
+    defaultPort,
+    description,
+    env: parsedEnv,
+  });
   if (!record) {
     res.status(404).json({ error: "image not found" });
     return;
