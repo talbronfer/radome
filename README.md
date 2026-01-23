@@ -55,6 +55,8 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
 | `RADOME_DB_PATH` | `./data/radome.db` | SQLite database path for users and images. |
 | `RADOME_ADMIN_USERNAME` | `admin` | Seed admin username. |
 | `RADOME_ADMIN_PASSWORD` | `radome` | Seed admin password. |
+| `RADOME_DOCKERHUB_USERNAME` | _optional_ | Docker Hub username used for pulling private images. |
+| `RADOME_DOCKERHUB_TOKEN` | _optional_ | Docker Hub personal access token for registry auth. |
 
 ### Control API
 
