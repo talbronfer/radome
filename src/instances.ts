@@ -37,6 +37,11 @@ export const getInstance = (id: string) => instances.get(id);
 export const createInstance = async (input: CreateInstanceInput) => {
   const id = uuidv4();
   const containerPort = input.containerPort ?? input.image.defaultPort;
+  const mergedEnv = {
+    ...(input.image.env ?? {}),
+    ...(input.env ?? {}),
+  };
+  const envEntries = Object.entries(mergedEnv);
   const deploymentName = `radome-agent-${id}`;
   const serviceName = `radome-agent-${id}`;
   const serviceHost = `${serviceName}.${namespace}.svc.cluster.local`;
@@ -67,9 +72,10 @@ export const createInstance = async (input: CreateInstanceInput) => {
               name: "agent",
               image: input.image.name,
               ports: [{ containerPort }],
-              env: input.env
-                ? Object.entries(input.env).map(([key, value]) => ({ name: key, value }))
-                : undefined,
+              env:
+                envEntries.length > 0
+                  ? envEntries.map(([key, value]) => ({ name: key, value }))
+                  : undefined,
               command: input.command,
             },
           ],

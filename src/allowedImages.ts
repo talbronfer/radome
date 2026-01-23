@@ -3,6 +3,7 @@ export type AllowedImage = {
   dockerHubUrl: string;
   defaultPort: number;
   description: string;
+  env?: Record<string, string>;
 };
 
 export const allowedImages: AllowedImage[] = [
@@ -23,7 +24,7 @@ export const allowedImages: AllowedImage[] = [
     dockerHubUrl: "https://hub.docker.com/r/modelcontextprotocol/server",
     defaultPort: 3000,
     description: "MCP server base image (example).",
-  }
+  },
 ];
 
 export const allowedImageNames = new Set(allowedImages.map((image) => image.name));
