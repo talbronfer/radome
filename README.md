@@ -50,6 +50,8 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
 | `RADOME_CONTROL_PORT` | `3000` | Port for the control API. |
 | `RADOME_PROXY_PORT` | `8080` | Port for the proxy that forwards traffic to instances. |
 | `RADOME_BASE_DOMAIN` | `radome.local` | Base domain for instance subdomains. |
+| `RADOME_PUBLIC_PROXY_URL` | _optional_ | Public base URL for instance access (for example `http://localhost:8080` or `https://proxy.example.com`). When set, instance URLs use path-based routing instead of subdomains. |
+| `RADOME_PROXY_PATH_PREFIX` | `/instances` | Path prefix used for instance routing when `RADOME_PUBLIC_PROXY_URL` is set. |
 | `RADOME_KUBE_NAMESPACE` | `default` | Namespace for Radome-managed deployments/services. |
 | `RADOME_KUBE_CONFIG_PATH` | _required_ | Path to your kubeconfig YAML file (for example `$HOME/.kube/config`). |
 | `RADOME_DB_PATH` | `./data/radome.db` | SQLite database path for users and images. |
@@ -79,7 +81,7 @@ curl -X POST http://localhost:3000/instances \
   -d '{"image":"langchain/langchain"}'
 ```
 
-The response includes an `url` like `http://<id>.radome.local:8080` which forwards to the container.
+The response includes an `url` like `http://<id>.radome.local:8080` which forwards to the container. If you set `RADOME_PUBLIC_PROXY_URL`, the URL switches to path-based routing (for example `http://localhost:8080/instances/<id>`), which is handy when you only want to expose a single proxy port publicly.
 
 ### Admin UI
 

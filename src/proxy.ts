@@ -5,6 +5,7 @@ import { getInstance } from "./instances.js";
 export type ProxyConfig = {
   baseDomain: string;
   port: number;
+  pathPrefix?: string;
 };
 
 const extractSubdomain = (host: string, baseDomain: string) => {
@@ -22,20 +23,55 @@ const extractSubdomain = (host: string, baseDomain: string) => {
   return subdomain || null;
 };
 
-export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
+const normalizePathPrefix = (pathPrefix: string) => {
+  if (!pathPrefix.startsWith("/")) {
+    return `/${pathPrefix}`;
+  }
+  return pathPrefix.endsWith("/") ? pathPrefix.slice(0, -1) : pathPrefix;
+};
+
+const extractInstanceFromPath = (url: string, pathPrefix: string) => {
+  const [path, query] = url.split("?");
+  const normalizedPrefix = normalizePathPrefix(pathPrefix);
+  if (!path.startsWith(normalizedPrefix)) {
+    return null;
+  }
+  const remainder = path.slice(normalizedPrefix.length);
+  if (!remainder.startsWith("/")) {
+    return null;
+  }
+  const trimmed = remainder.slice(1);
+  const [instanceId, ...restSegments] = trimmed.split("/").filter(Boolean);
+  if (!instanceId) {
+    return null;
+  }
+  const restPath = restSegments.length > 0 ? `/${restSegments.join("/")}` : "/";
+  const rewrittenUrl = query ? `${restPath}?${query}` : restPath;
+  return { instanceId, rewrittenUrl };
+};
+
+export const startProxy = ({ baseDomain, port, pathPrefix }: ProxyConfig) => {
   const proxy = httpProxy.createProxyServer({});
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     const hostHeader = req.headers.host ?? "";
     const subdomain = extractSubdomain(hostHeader, baseDomain);
+    let instanceId = subdomain;
+    if (!instanceId && pathPrefix && req.url) {
+      const match = extractInstanceFromPath(req.url, pathPrefix);
+      if (match) {
+        instanceId = match.instanceId;
+        req.url = match.rewrittenUrl;
+      }
+    }
 
-    if (!subdomain) {
+    if (!instanceId) {
       res.statusCode = 400;
-      res.end("Missing or invalid subdomain host header.");
+      res.end("Missing or invalid instance identifier.");
       return;
     }
 
-    const instance = getInstance(subdomain);
+    const instance = getInstance(instanceId);
     if (!instance) {
       res.statusCode = 404;
       res.end("Instance not found.");
