@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { hashSync } from "bcryptjs";
+import bcrypt from "bcryptjs";
 import { allowedImages as seedImages } from "./allowedImages.js";
 
 export type UserRecord = {
@@ -82,7 +82,7 @@ const seedDefaults = () => {
 
   if (!existingAdmin?.id) {
     const now = new Date().toISOString();
-    const passwordHash = hashSync(adminPassword, 10);
+    const passwordHash = bcrypt.hashSync(adminPassword, 10);
     db.prepare(
       "INSERT INTO users (username, passwordHash, role, createdAt) VALUES (?, ?, ?, ?)",
     ).run(adminUsername, passwordHash, "admin", now);

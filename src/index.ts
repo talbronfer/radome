@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
-import { compareSync, hashSync } from "bcryptjs";
+import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import {
   createAllowedImage,
@@ -23,10 +23,23 @@ import { startProxy } from "./proxy.js";
 const PORT = Number(process.env.RADOME_CONTROL_PORT ?? 3000);
 const PROXY_PORT = Number(process.env.RADOME_PROXY_PORT ?? 8080);
 const BASE_DOMAIN = process.env.RADOME_BASE_DOMAIN ?? "radome.local";
+const ADMIN_UI_ORIGIN = process.env.RADOME_ADMIN_UI_ORIGIN ?? "http://localhost:3001";
 
 initDb();
 
 const app = express();
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", ADMIN_UI_ORIGIN);
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 app.use(express.json());
 
 type AuthRequest = Request & { user?: { id: number; role: string } };
@@ -75,7 +88,7 @@ app.post("/auth/login", (req, res) => {
   }
 
   const user = getUserByUsername(username);
-  if (!user || !compareSync(password, user.passwordHash)) {
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     res.status(401).json({ error: "invalid credentials" });
     return;
   }
@@ -177,7 +190,7 @@ app.post("/users", authenticate, requireAdmin, (req, res) => {
   }
 
   try {
-    const passwordHash = hashSync(password, 10);
+    const passwordHash = bcrypt.hashSync(password, 10);
     const user = createUser(username, passwordHash, role);
     res.status(201).json({ user: { id: user.id, username: user.username, role: user.role } });
   } catch (error) {
