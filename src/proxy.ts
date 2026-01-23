@@ -1,6 +1,7 @@
-import http, { IncomingMessage, ServerResponse } from "http";
+import http from "http";
 import https from "https";
-import httpProxy from "http-proxy";
+import express, { NextFunction, Request, Response } from "express";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { getInstance } from "./instances.js";
 import { kubeConfig } from "./kube.js";
 
@@ -53,61 +54,29 @@ const extractInstanceFromPath = (url: string, pathPrefix: string) => {
   return { instanceId, rewrittenUrl };
 };
 
+type ProxyContext = {
+  instanceId: string;
+  clientPrefix: string;
+  serviceHost: string;
+  servicePort: number;
+  namespace: string;
+  serviceName: string;
+  mode: "cluster" | "apiserver";
+  apiserverPrefix?: string;
+  apiserverTarget?: string;
+  apiserverHeaders?: Record<string, string>;
+  apiserverAgent?: https.Agent;
+};
+
+type ProxyRequest = Request & { radomeProxyContext?: ProxyContext };
+
 export const startProxy = (config: ProxyConfig) => {
   const { baseDomain, port, pathPrefix } = config;
-  const proxy = httpProxy.createProxyServer({});
-  const normalizedClientPrefix = pathPrefix ? normalizePathPrefix(pathPrefix) : null;
+  const normalizedClientPrefix = pathPrefix ? normalizePathPrefix(pathPrefix) : "";
+  const proxyMode = config.mode ?? "cluster";
+  const app = express();
 
-  proxy.on("proxyRes", (proxyRes, req) => {
-    const proxyContext = (req as IncomingMessage & {
-      radomeProxyContext?: {
-        apiserverPrefix: string;
-        clientPrefix: string;
-      };
-    }).radomeProxyContext;
-    if (!proxyContext) {
-      return;
-    }
-    const locationHeader = proxyRes.headers.location;
-    if (!locationHeader) {
-      return;
-    }
-    const { apiserverPrefix, clientPrefix } = proxyContext;
-    const locationValue = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
-    if (!locationValue) {
-      return;
-    }
-    const rewriteLocation = (path: string) => {
-      if (path.startsWith(apiserverPrefix)) {
-        const suffix = path.slice(apiserverPrefix.length);
-        const nextPath = `${clientPrefix}${suffix}`;
-        return nextPath === "" ? "/" : nextPath;
-      }
-      if (path.startsWith("/") && !path.startsWith(clientPrefix)) {
-        return clientPrefix ? `${clientPrefix}${path}` : path;
-      }
-      return null;
-    };
-    try {
-      if (locationValue.startsWith("http://") || locationValue.startsWith("https://")) {
-        const parsed = new URL(locationValue);
-        const rewrittenPath = rewriteLocation(parsed.pathname);
-        if (rewrittenPath) {
-          const rewrittenUrl = `${rewrittenPath}${parsed.search}${parsed.hash}`;
-          proxyRes.headers.location = rewrittenUrl;
-        }
-      } else {
-        const rewrittenPath = rewriteLocation(locationValue);
-        if (rewrittenPath) {
-          proxyRes.headers.location = rewrittenPath;
-        }
-      }
-    } finally {
-      delete (req as IncomingMessage & { radomeProxyContext?: unknown }).radomeProxyContext;
-    }
-  });
-
-  const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+  const resolveInstance = async (req: ProxyRequest, res: Response, next: NextFunction) => {
     const hostHeader = req.headers.host ?? "";
     const subdomain = extractSubdomain(hostHeader, baseDomain);
     let instanceId = subdomain;
@@ -120,85 +89,145 @@ export const startProxy = (config: ProxyConfig) => {
     }
 
     if (!instanceId) {
-      res.statusCode = 400;
-      res.end("Missing or invalid instance identifier.");
+      res.status(400).send("Missing or invalid instance identifier.");
       return;
     }
 
     const instance = getInstance(instanceId);
     if (!instance) {
-      res.statusCode = 404;
-      res.end("Instance not found.");
+      res.status(404).send("Instance not found.");
       return;
     }
 
-    const respondProxyError = (err: Error | undefined) => {
-      res.statusCode = 502;
-      res.end(`Proxy error: ${err?.message ?? "unknown"}`);
+    const context: ProxyContext = {
+      instanceId,
+      clientPrefix: normalizedClientPrefix ? `${normalizedClientPrefix}/${instanceId}` : "",
+      serviceHost: instance.serviceHost,
+      servicePort: instance.containerPort,
+      namespace: instance.namespace,
+      serviceName: instance.serviceName,
+      mode: proxyMode === "apiserver" ? "apiserver" : "cluster",
     };
 
-    const proxyMode = config.mode ?? "cluster";
-    if (proxyMode === "apiserver") {
-      void (async () => {
-        try {
-          const cluster = kubeConfig.getCurrentCluster();
-          if (!cluster) {
-            res.statusCode = 500;
-            res.end("Kubernetes cluster config not available.");
-            return;
-          }
-          const requestOptions: {
-            headers?: Record<string, string>;
-            cert?: Buffer;
-            key?: Buffer;
-            ca?: Buffer;
-            strictSSL?: boolean;
-            agentOptions?: https.AgentOptions;
-          } = { headers: {} };
-          await kubeConfig.applyToRequest(requestOptions as never);
-          const secure = requestOptions.strictSSL !== false;
-          const agent = new https.Agent({
-            ca: requestOptions.ca,
-            cert: requestOptions.cert,
-            key: requestOptions.key,
-            rejectUnauthorized: secure,
-            ...(requestOptions.agentOptions ?? {}),
-          });
-          const proxyPath = `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy${req.url ?? ""}`;
-          const clientPrefix = normalizedClientPrefix ? `${normalizedClientPrefix}/${instance.id}` : "";
-          (req as IncomingMessage & {
-            radomeProxyContext?: { apiserverPrefix: string; clientPrefix: string };
-          }).radomeProxyContext = {
-            apiserverPrefix: `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy`,
-            clientPrefix,
-          };
-          req.url = proxyPath;
-          proxy.web(
-            req,
-            res,
-            {
-              target: cluster.server,
-              headers: requestOptions.headers,
-              agent,
-              secure,
-              changeOrigin: true,
-            },
-            respondProxyError,
-          );
-        } catch (error) {
-          respondProxyError(error as Error);
+    if (context.mode === "apiserver") {
+      try {
+        const cluster = kubeConfig.getCurrentCluster();
+        if (!cluster) {
+          res.status(500).send("Kubernetes cluster config not available.");
+          return;
         }
-      })();
-      return;
+        const requestOptions: {
+          headers?: Record<string, string>;
+          cert?: Buffer;
+          key?: Buffer;
+          ca?: Buffer;
+          strictSSL?: boolean;
+          agentOptions?: https.AgentOptions;
+        } = { headers: {} };
+        await kubeConfig.applyToRequest(requestOptions as never);
+        const secure = requestOptions.strictSSL !== false;
+        const agent = new https.Agent({
+          ca: requestOptions.ca,
+          cert: requestOptions.cert,
+          key: requestOptions.key,
+          rejectUnauthorized: secure,
+          ...(requestOptions.agentOptions ?? {}),
+        });
+        context.apiserverTarget = cluster.server;
+        context.apiserverHeaders = requestOptions.headers;
+        context.apiserverAgent = agent;
+        context.apiserverPrefix = `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy`;
+      } catch (error) {
+        res.status(502).send(`Proxy error: ${(error as Error).message}`);
+        return;
+      }
     }
 
-    proxy.web(
-      req,
-      res,
-      { target: `http://${instance.serviceHost}:${instance.containerPort}` },
-      respondProxyError,
-    );
+    req.radomeProxyContext = context;
+    next();
+  };
+
+  const proxyMiddleware = createProxyMiddleware<ProxyRequest>({
+    target: "http://localhost",
+    changeOrigin: true,
+    ws: true,
+    router: (req) => {
+      const context = req.radomeProxyContext;
+      if (!context) {
+        return "http://localhost";
+      }
+      if (context.mode === "apiserver") {
+        return context.apiserverTarget ?? "http://localhost";
+      }
+      return `http://${context.serviceHost}:${context.servicePort}`;
+    },
+    pathRewrite: (path, req) => {
+      const context = req.radomeProxyContext;
+      if (!context || context.mode !== "apiserver") {
+        return path;
+      }
+      return `${context.apiserverPrefix}${path}`;
+    },
+    onProxyReq: (proxyReq, req) => {
+      const context = req.radomeProxyContext;
+      if (!context || context.mode !== "apiserver") {
+        return;
+      }
+      const headers = context.apiserverHeaders ?? {};
+      for (const [key, value] of Object.entries(headers)) {
+        proxyReq.setHeader(key, value);
+      }
+      if (context.apiserverAgent) {
+        (proxyReq as typeof proxyReq & { agent?: https.Agent }).agent = context.apiserverAgent;
+      }
+    },
+    onProxyRes: (proxyRes, req) => {
+      const context = req.radomeProxyContext;
+      if (!context || context.mode !== "apiserver") {
+        return;
+      }
+      const locationHeader = proxyRes.headers.location;
+      if (!locationHeader || !context.apiserverPrefix) {
+        return;
+      }
+      const locationValue = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
+      if (!locationValue) {
+        return;
+      }
+      const rewriteLocation = (path: string) => {
+        if (path.startsWith(context.apiserverPrefix ?? "")) {
+          const suffix = path.slice(context.apiserverPrefix.length);
+          const nextPath = `${context.clientPrefix}${suffix}`;
+          return nextPath === "" ? "/" : nextPath;
+        }
+        if (path.startsWith("/") && !path.startsWith(context.clientPrefix)) {
+          return context.clientPrefix ? `${context.clientPrefix}${path}` : path;
+        }
+        return null;
+      };
+      if (locationValue.startsWith("http://") || locationValue.startsWith("https://")) {
+        const parsed = new URL(locationValue);
+        const rewrittenPath = rewriteLocation(parsed.pathname);
+        if (rewrittenPath) {
+          proxyRes.headers.location = `${rewrittenPath}${parsed.search}${parsed.hash}`;
+        }
+      } else {
+        const rewrittenPath = rewriteLocation(locationValue);
+        if (rewrittenPath) {
+          proxyRes.headers.location = rewrittenPath;
+        }
+      }
+    },
+    onError: (err, _req, res) => {
+      res.statusCode = 502;
+      res.end(`Proxy error: ${err?.message ?? "unknown"}`);
+    },
   });
+
+  app.use(resolveInstance);
+  app.use(proxyMiddleware);
+
+  const server = http.createServer(app);
 
   server.listen(port, () => {
     // eslint-disable-next-line no-console
