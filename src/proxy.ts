@@ -51,6 +51,13 @@ const buildKubeServicePath = (instance: ReturnType<typeof getInstance>, requestU
   return `${basePath}${normalizedPath === "/" ? "/" : normalizedPath}`;
 };
 
+const buildKubeServiceBasePath = (instance: ReturnType<typeof getInstance>) => {
+  if (!instance) {
+    return null;
+  }
+  return `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy`;
+};
+
 export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
   const { server: kubeApiServer, requestOptions } = getKubeProxyConfig();
   const headers = (requestOptions.headers as Record<string, string>) ?? {};
@@ -69,6 +76,32 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
         proxyReq.setHeader(key, value);
       }
     });
+  });
+
+  proxy.on("proxyRes", (proxyRes, req) => {
+    const location = proxyRes.headers.location;
+    const instanceId = (req as IncomingMessage & { radomeInstanceId?: string }).radomeInstanceId;
+    const basePath = (req as IncomingMessage & { radomeBasePath?: string }).radomeBasePath;
+    if (!location || !instanceId || !basePath) {
+      return;
+    }
+    const locationValue = Array.isArray(location) ? location[0] : location;
+    if (!locationValue) {
+      return;
+    }
+    try {
+      const parsed = new URL(locationValue, kubeApiServer);
+      const path = parsed.pathname;
+      if (!path.startsWith(basePath)) {
+        return;
+      }
+      const suffix = path.slice(basePath.length);
+      const proxiedPath = `/instances/${instanceId}${suffix || "/"}`;
+      const rewritten = `${proxiedPath}${parsed.search}`;
+      proxyRes.headers.location = rewritten;
+    } catch {
+      return;
+    }
   });
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -102,6 +135,15 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
       return;
     }
 
+    const basePath = buildKubeServiceBasePath(instance);
+    if (!basePath) {
+      res.statusCode = 500;
+      res.end("Unable to build Kubernetes base proxy path.");
+      return;
+    }
+
+    (req as IncomingMessage & { radomeInstanceId?: string }).radomeInstanceId = instance.id;
+    (req as IncomingMessage & { radomeBasePath?: string }).radomeBasePath = basePath;
     req.url = kubePath;
 
     proxy.web(
