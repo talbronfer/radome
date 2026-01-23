@@ -78,12 +78,15 @@ export const startProxy = (config: ProxyConfig) => {
       return;
     }
     const rewriteLocation = (path: string) => {
-      if (!path.startsWith(apiserverPrefix)) {
-        return null;
+      if (path.startsWith(apiserverPrefix)) {
+        const suffix = path.slice(apiserverPrefix.length);
+        const nextPath = `${clientPrefix}${suffix}`;
+        return nextPath === "" ? "/" : nextPath;
       }
-      const suffix = path.slice(apiserverPrefix.length);
-      const nextPath = `${clientPrefix}${suffix}`;
-      return nextPath === "" ? "/" : nextPath;
+      if (path.startsWith("/") && !path.startsWith(clientPrefix)) {
+        return clientPrefix ? `${clientPrefix}${path}` : path;
+      }
+      return null;
     };
     try {
       if (locationValue.startsWith("http://") || locationValue.startsWith("https://")) {
