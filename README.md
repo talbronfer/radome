@@ -52,6 +52,9 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
 | `RADOME_BASE_DOMAIN` | `radome.local` | Base domain for instance subdomains. |
 | `RADOME_KUBE_NAMESPACE` | `default` | Namespace for Radome-managed deployments/services. |
 | `RADOME_KUBE_CONFIG_PATH` | _required_ | Path to your kubeconfig YAML file (for example `$HOME/.kube/config`). |
+| `RADOME_DOCKER_USERNAME` | _empty_ | Docker Hub username for pulling private images (token-based login). |
+| `RADOME_DOCKER_TOKEN` | _empty_ | Docker Hub personal access token used as the password when creating the pull secret. |
+| `RADOME_DOCKER_SECRET_NAME` | `radome-dockerhub` | Kubernetes secret name created/used for Docker auth. |
 | `RADOME_DB_PATH` | `./data/radome.db` | SQLite database path for users and images. |
 | `RADOME_ADMIN_USERNAME` | `admin` | Seed admin username. |
 | `RADOME_ADMIN_PASSWORD` | `radome` | Seed admin password. |
