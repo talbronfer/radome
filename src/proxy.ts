@@ -56,6 +56,53 @@ const extractInstanceFromPath = (url: string, pathPrefix: string) => {
 export const startProxy = (config: ProxyConfig) => {
   const { baseDomain, port, pathPrefix } = config;
   const proxy = httpProxy.createProxyServer({});
+  const normalizedClientPrefix = pathPrefix ? normalizePathPrefix(pathPrefix) : null;
+
+  proxy.on("proxyRes", (proxyRes, req) => {
+    const proxyContext = (req as IncomingMessage & {
+      radomeProxyContext?: {
+        apiserverPrefix: string;
+        clientPrefix: string;
+      };
+    }).radomeProxyContext;
+    if (!proxyContext) {
+      return;
+    }
+    const locationHeader = proxyRes.headers.location;
+    if (!locationHeader) {
+      return;
+    }
+    const { apiserverPrefix, clientPrefix } = proxyContext;
+    const locationValue = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
+    if (!locationValue) {
+      return;
+    }
+    const rewriteLocation = (path: string) => {
+      if (!path.startsWith(apiserverPrefix)) {
+        return null;
+      }
+      const suffix = path.slice(apiserverPrefix.length);
+      const nextPath = `${clientPrefix}${suffix}`;
+      return nextPath === "" ? "/" : nextPath;
+    };
+    try {
+      if (locationValue.startsWith("http://") || locationValue.startsWith("https://")) {
+        const parsed = new URL(locationValue);
+        const rewrittenPath = rewriteLocation(parsed.pathname);
+        if (rewrittenPath) {
+          const rewrittenUrl = `${rewrittenPath}${parsed.search}${parsed.hash}`;
+          proxyRes.headers.location = rewrittenUrl;
+        }
+      } else {
+        const rewrittenPath = rewriteLocation(locationValue);
+        if (rewrittenPath) {
+          proxyRes.headers.location = rewrittenPath;
+        }
+      }
+    } finally {
+      delete (req as IncomingMessage & { radomeProxyContext?: unknown }).radomeProxyContext;
+    }
+  });
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     const hostHeader = req.headers.host ?? "";
@@ -115,6 +162,13 @@ export const startProxy = (config: ProxyConfig) => {
             ...(requestOptions.agentOptions ?? {}),
           });
           const proxyPath = `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy${req.url ?? ""}`;
+          const clientPrefix = normalizedClientPrefix ? `${normalizedClientPrefix}/${instance.id}` : "";
+          (req as IncomingMessage & {
+            radomeProxyContext?: { apiserverPrefix: string; clientPrefix: string };
+          }).radomeProxyContext = {
+            apiserverPrefix: `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy`,
+            clientPrefix,
+          };
           req.url = proxyPath;
           proxy.web(
             req,
