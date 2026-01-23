@@ -1,11 +1,14 @@
 import http, { IncomingMessage, ServerResponse } from "http";
+import https from "https";
 import httpProxy from "http-proxy";
 import { getInstance } from "./instances.js";
+import { kubeConfig } from "./kube.js";
 
 export type ProxyConfig = {
   baseDomain: string;
   port: number;
   pathPrefix?: string;
+  mode?: "cluster" | "apiserver";
 };
 
 const extractSubdomain = (host: string, baseDomain: string) => {
@@ -50,7 +53,8 @@ const extractInstanceFromPath = (url: string, pathPrefix: string) => {
   return { instanceId, rewrittenUrl };
 };
 
-export const startProxy = ({ baseDomain, port, pathPrefix }: ProxyConfig) => {
+export const startProxy = (config: ProxyConfig) => {
+  const { baseDomain, port, pathPrefix } = config;
   const proxy = httpProxy.createProxyServer({});
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -78,14 +82,64 @@ export const startProxy = ({ baseDomain, port, pathPrefix }: ProxyConfig) => {
       return;
     }
 
+    const respondProxyError = (err: Error | undefined) => {
+      res.statusCode = 502;
+      res.end(`Proxy error: ${err?.message ?? "unknown"}`);
+    };
+
+    const proxyMode = config.mode ?? "cluster";
+    if (proxyMode === "apiserver") {
+      void (async () => {
+        try {
+          const cluster = kubeConfig.getCurrentCluster();
+          if (!cluster) {
+            res.statusCode = 500;
+            res.end("Kubernetes cluster config not available.");
+            return;
+          }
+          const requestOptions: {
+            headers?: Record<string, string>;
+            cert?: Buffer;
+            key?: Buffer;
+            ca?: Buffer;
+            strictSSL?: boolean;
+            agentOptions?: https.AgentOptions;
+          } = { headers: {} };
+          await kubeConfig.applyToRequest(requestOptions as never);
+          const secure = requestOptions.strictSSL !== false;
+          const agent = new https.Agent({
+            ca: requestOptions.ca,
+            cert: requestOptions.cert,
+            key: requestOptions.key,
+            rejectUnauthorized: secure,
+            ...(requestOptions.agentOptions ?? {}),
+          });
+          const proxyPath = `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy${req.url ?? ""}`;
+          req.url = proxyPath;
+          proxy.web(
+            req,
+            res,
+            {
+              target: cluster.server,
+              headers: requestOptions.headers,
+              agent,
+              secure,
+              changeOrigin: true,
+            },
+            respondProxyError,
+          );
+        } catch (error) {
+          respondProxyError(error as Error);
+        }
+      })();
+      return;
+    }
+
     proxy.web(
       req,
       res,
       { target: `http://${instance.serviceHost}:${instance.containerPort}` },
-      (err) => {
-        res.statusCode = 502;
-        res.end(`Proxy error: ${err?.message ?? "unknown"}`);
-      },
+      respondProxyError,
     );
   });
 

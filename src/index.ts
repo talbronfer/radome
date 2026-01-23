@@ -25,6 +25,7 @@ const PROXY_PORT = Number(process.env.RADOME_PROXY_PORT ?? 8080);
 const BASE_DOMAIN = process.env.RADOME_BASE_DOMAIN ?? "radome.local";
 const PUBLIC_PROXY_URL = process.env.RADOME_PUBLIC_PROXY_URL;
 const PROXY_PATH_PREFIX = process.env.RADOME_PROXY_PATH_PREFIX ?? "/instances";
+const PROXY_MODE = process.env.RADOME_PROXY_MODE ?? "cluster";
 const ADMIN_UI_ORIGIN = process.env.RADOME_ADMIN_UI_ORIGIN ?? "http://localhost:3001";
 
 initDb();
@@ -317,4 +318,9 @@ app.listen(PORT, () => {
   console.log(`Radome control API listening on ${PORT}`);
 });
 
-startProxy({ baseDomain: BASE_DOMAIN, port: PROXY_PORT, pathPrefix: PROXY_PATH_PREFIX });
+startProxy({
+  baseDomain: BASE_DOMAIN,
+  port: PROXY_PORT,
+  pathPrefix: PROXY_PATH_PREFIX,
+  mode: PROXY_MODE === "apiserver" ? "apiserver" : "cluster",
+});
