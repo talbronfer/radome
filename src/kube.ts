@@ -6,6 +6,7 @@ export type KubeProxyConfig = {
 };
 
 const kubeConfigPath = process.env.RADOME_KUBE_CONFIG_PATH;
+const kubeInsecureSkipTlsVerify = process.env.RADOME_KUBE_INSECURE_SKIP_TLS_VERIFY;
 
 if (!kubeConfigPath) {
   throw new Error("RADOME_KUBE_CONFIG_PATH must be set to a kubeconfig file path.");
@@ -17,6 +18,11 @@ kubeConfig.loadFromFile(kubeConfigPath);
 export const getKubeProxyConfig = (): KubeProxyConfig => {
   const requestOptions: Record<string, unknown> = { headers: {} };
   kubeConfig.applyToRequest(requestOptions as never);
+  if (kubeInsecureSkipTlsVerify?.toLowerCase() === "true" || kubeInsecureSkipTlsVerify === "1") {
+    // SECURITY: This disables TLS certificate verification for the Kubernetes API server.
+    // Use only in controlled environments where hostname validation is intentionally bypassed.
+    requestOptions.rejectUnauthorized = false;
+  }
   const cluster = kubeConfig.getCurrentCluster();
   if (!cluster?.server) {
     throw new Error("Unable to determine Kubernetes API server from kubeconfig.");

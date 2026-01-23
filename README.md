@@ -52,6 +52,7 @@ Set `NEXT_PUBLIC_API_BASE` to the control API base URL if it's not `http://local
 | `RADOME_BASE_DOMAIN` | `radome.local` | Base domain for instance subdomains. |
 | `RADOME_KUBE_NAMESPACE` | `default` | Namespace for Radome-managed deployments/services. |
 | `RADOME_KUBE_CONFIG_PATH` | _required_ | Path to your kubeconfig YAML file (for example `$HOME/.kube/config`). |
+| `RADOME_KUBE_INSECURE_SKIP_TLS_VERIFY` | `false` | Set to `true` or `1` to disable TLS certificate verification when proxying to the Kubernetes API (unsafe; use only in controlled environments). |
 | `RADOME_DB_PATH` | `./data/radome.db` | SQLite database path for users and images. |
 | `RADOME_ADMIN_USERNAME` | `admin` | Seed admin username. |
 | `RADOME_ADMIN_PASSWORD` | `radome` | Seed admin password. |
