@@ -1,6 +1,8 @@
 import http, { IncomingMessage, ServerResponse } from "http";
+import https from "https";
 import httpProxy from "http-proxy";
 import { getInstance } from "./instances.js";
+import { getKubeProxyConfig } from "./kube.js";
 
 export type ProxyConfig = {
   baseDomain: string;
@@ -39,8 +41,35 @@ const extractInstancePath = (reqUrl: string | undefined) => {
   };
 };
 
+const buildKubeServicePath = (instance: ReturnType<typeof getInstance>, requestUrl: string | undefined) => {
+  if (!instance) {
+    return null;
+  }
+  const path = requestUrl ?? "/";
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const basePath = `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy`;
+  return `${basePath}${normalizedPath === "/" ? "/" : normalizedPath}`;
+};
+
 export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
-  const proxy = httpProxy.createProxyServer({});
+  const { server: kubeApiServer, requestOptions } = getKubeProxyConfig();
+  const headers = (requestOptions.headers as Record<string, string>) ?? {};
+  const agentOptions: https.AgentOptions = {
+    ca: requestOptions.ca as string | Buffer | Array<string | Buffer> | undefined,
+    cert: requestOptions.cert as string | Buffer | undefined,
+    key: requestOptions.key as string | Buffer | undefined,
+    rejectUnauthorized: requestOptions.rejectUnauthorized as boolean | undefined,
+  };
+  const agent = kubeApiServer.startsWith("https") ? new https.Agent(agentOptions) : undefined;
+  const proxy = httpProxy.createProxyServer({ target: kubeApiServer, agent });
+
+  proxy.on("proxyReq", (proxyReq) => {
+    Object.entries(headers).forEach(([key, value]) => {
+      if (value !== undefined) {
+        proxyReq.setHeader(key, value);
+      }
+    });
+  });
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     const hostHeader = req.headers.host ?? "";
@@ -66,10 +95,19 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
       req.url = instancePath.proxiedPath;
     }
 
+    const kubePath = buildKubeServicePath(instance, req.url);
+    if (!kubePath) {
+      res.statusCode = 500;
+      res.end("Unable to build Kubernetes proxy path.");
+      return;
+    }
+
+    req.url = kubePath;
+
     proxy.web(
       req,
       res,
-      { target: `http://${instance.serviceHost}:${instance.containerPort}` },
+      {},
       (err) => {
         res.statusCode = 502;
         res.end(`Proxy error: ${err?.message ?? "unknown"}`);
@@ -79,7 +117,7 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
 
   server.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`Radome proxy listening on ${port} for *.${baseDomain} and ${baseDomain}/instances/:id`);
+    console.log(`Radome proxy listening on ${port} for *.${baseDomain} and ${baseDomain}/instances/:id via Kubernetes API`);
   });
 
   return server;
