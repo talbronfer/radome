@@ -7,6 +7,7 @@ type Instance = {
   name?: string;
   image: string;
   status: string;
+  statusMessage?: string;
   serviceName: string;
   namespace: string;
   containerPort: number;
@@ -54,6 +55,13 @@ const fetchJson = async (path: string, options: RequestInit = {}) => {
 
 const classNames = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
+
+const statusStyles: Record<string, string> = {
+  running: "bg-emerald-500/10 text-emerald-200 ring-emerald-500/30",
+  starting: "bg-amber-500/10 text-amber-200 ring-amber-500/30",
+  stopped: "bg-slate-500/10 text-slate-200 ring-slate-500/30",
+  error: "bg-rose-500/10 text-rose-200 ring-rose-500/30",
+};
 
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null);
@@ -313,6 +321,20 @@ export default function AdminPage() {
                       {instance.name || instance.id}
                     </p>
                     <p className="text-xs text-slate-400">Image: {instance.image}</p>
+                    <p className="mt-1 text-xs text-slate-300">
+                      Status{" "}
+                      <span
+                        className={classNames(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1",
+                          statusStyles[instance.status] || "bg-slate-500/10 text-slate-200 ring-slate-500/30",
+                        )}
+                      >
+                        {instance.status}
+                      </span>
+                    </p>
+                    {instance.statusMessage && (
+                      <p className="text-xs text-rose-200">{instance.statusMessage}</p>
+                    )}
                     <p className="text-xs text-slate-400">Service: {instance.serviceName}</p>
                     <p className="text-xs text-slate-400">
                       Namespace: {instance.namespace} · Port {instance.containerPort}

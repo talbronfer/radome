@@ -198,9 +198,9 @@ app.post("/users", authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.get("/instances", authenticate, (_req, res) => {
+app.get("/instances", authenticate, async (_req, res) => {
   res.json({
-    instances: listInstances(),
+    instances: await listInstances(),
   });
 });
 
