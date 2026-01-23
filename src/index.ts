@@ -23,6 +23,9 @@ import { startProxy } from "./proxy.js";
 const PORT = Number(process.env.RADOME_CONTROL_PORT ?? 3000);
 const PROXY_PORT = Number(process.env.RADOME_PROXY_PORT ?? 8080);
 const BASE_DOMAIN = process.env.RADOME_BASE_DOMAIN ?? "radome.local";
+const PUBLIC_PROXY_URL = process.env.RADOME_PUBLIC_PROXY_URL;
+const PROXY_PATH_PREFIX = process.env.RADOME_PROXY_PATH_PREFIX ?? "/instances";
+const PROXY_MODE = process.env.RADOME_PROXY_MODE ?? "cluster";
 const ADMIN_UI_ORIGIN = process.env.RADOME_ADMIN_UI_ORIGIN ?? "http://localhost:3001";
 
 initDb();
@@ -128,6 +131,14 @@ const parseEnvInput = (env: unknown) => {
   }
   return record;
 };
+
+const normalizePublicProxyUrl = (url: string) => url.replace(/\/$/, "");
+const normalizePathPrefix = (pathPrefix: string) =>
+  pathPrefix.startsWith("/")
+    ? pathPrefix.endsWith("/")
+      ? pathPrefix.slice(0, -1)
+      : pathPrefix
+    : `/${pathPrefix}`;
 
 app.post("/images", authenticate, requireAdmin, (req, res) => {
   const { name, dockerHubUrl, defaultPort, description, env } = req.body ?? {};
@@ -277,7 +288,11 @@ app.post("/instances", authenticate, async (req, res) => {
       command: Array.isArray(command) ? command : undefined,
     });
 
-    const url = `http://${instance.id}.${BASE_DOMAIN}:${PROXY_PORT}`;
+    const url = PUBLIC_PROXY_URL
+      ? `${normalizePublicProxyUrl(PUBLIC_PROXY_URL)}${normalizePathPrefix(
+          PROXY_PATH_PREFIX,
+        )}/${instance.id}`
+      : `http://${instance.id}.${BASE_DOMAIN}:${PROXY_PORT}`;
 
     res.status(201).json({
       instance,
@@ -303,4 +318,9 @@ app.listen(PORT, () => {
   console.log(`Radome control API listening on ${PORT}`);
 });
 
-startProxy({ baseDomain: BASE_DOMAIN, port: PROXY_PORT });
+startProxy({
+  baseDomain: BASE_DOMAIN,
+  port: PROXY_PORT,
+  pathPrefix: PROXY_PATH_PREFIX,
+  mode: PROXY_MODE === "apiserver" ? "apiserver" : "cluster",
+});

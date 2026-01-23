@@ -11,3 +11,4 @@ kubeConfig.loadFromFile(kubeConfigPath);
 
 export const appsApi = kubeConfig.makeApiClient(AppsV1Api);
 export const coreApi = kubeConfig.makeApiClient(CoreV1Api);
+export { kubeConfig };
