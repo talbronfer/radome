@@ -277,7 +277,7 @@ app.post("/instances", authenticate, async (req, res) => {
       command: Array.isArray(command) ? command : undefined,
     });
 
-    const url = `http://${instance.id}.${BASE_DOMAIN}:${PROXY_PORT}`;
+    const url = `http://${BASE_DOMAIN}:${PROXY_PORT}/instances/${instance.id}`;
 
     res.status(201).json({
       instance,
