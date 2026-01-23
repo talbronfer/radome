@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
-import { compareSync, hashSync } from "bcryptjs";
+import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import {
   createAllowedImage,
@@ -75,7 +75,7 @@ app.post("/auth/login", (req, res) => {
   }
 
   const user = getUserByUsername(username);
-  if (!user || !compareSync(password, user.passwordHash)) {
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     res.status(401).json({ error: "invalid credentials" });
     return;
   }
@@ -177,7 +177,7 @@ app.post("/users", authenticate, requireAdmin, (req, res) => {
   }
 
   try {
-    const passwordHash = hashSync(password, 10);
+    const passwordHash = bcrypt.hashSync(password, 10);
     const user = createUser(username, passwordHash, role);
     res.status(201).json({ user: { id: user.id, username: user.username, role: user.role } });
   } catch (error) {
