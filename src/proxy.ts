@@ -58,6 +58,19 @@ const buildKubeServiceBasePath = (instance: ReturnType<typeof getInstance>) => {
   return `/api/v1/namespaces/${instance.namespace}/services/${instance.serviceName}:${instance.containerPort}/proxy`;
 };
 
+const applyCorsHeaders = (
+  headers: Record<string, string | string[] | undefined>,
+  origin: string | undefined,
+  requestHeaders: string | undefined,
+) => {
+  headers["access-control-allow-origin"] = origin ?? "*";
+  headers["access-control-allow-credentials"] = "true";
+  headers["access-control-allow-methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+  headers["access-control-allow-headers"] =
+    requestHeaders ?? "Content-Type, Authorization, X-Requested-With";
+  headers.vary = "Origin";
+};
+
 export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
   const { server: kubeApiServer, requestOptions } = getKubeProxyConfig();
   const headers = (requestOptions.headers as Record<string, string>) ?? {};
@@ -79,6 +92,11 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
   });
 
   proxy.on("proxyRes", (proxyRes, req) => {
+    applyCorsHeaders(
+      proxyRes.headers as Record<string, string | string[] | undefined>,
+      req.headers.origin,
+      req.headers["access-control-request-headers"] as string | undefined,
+    );
     const location = proxyRes.headers.location;
     const instanceId = (req as IncomingMessage & { radomeInstanceId?: string }).radomeInstanceId;
     const basePath = (req as IncomingMessage & { radomeBasePath?: string }).radomeBasePath;
@@ -105,6 +123,23 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
   });
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+    if (req.method === "OPTIONS") {
+      const responseHeaders: Record<string, string | string[] | undefined> = {};
+      applyCorsHeaders(
+        responseHeaders,
+        req.headers.origin,
+        req.headers["access-control-request-headers"] as string | undefined,
+      );
+      Object.entries(responseHeaders).forEach(([key, value]) => {
+        if (value !== undefined) {
+          res.setHeader(key, value);
+        }
+      });
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
     const hostHeader = req.headers.host ?? "";
     const subdomain = extractSubdomain(hostHeader, baseDomain);
     const instancePath = extractInstancePath(req.url);
