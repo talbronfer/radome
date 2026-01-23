@@ -81,11 +81,16 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
     rejectUnauthorized: requestOptions.rejectUnauthorized as boolean | undefined,
   };
   const agent = kubeApiServer.startsWith("https") ? new https.Agent(agentOptions) : undefined;
-  const proxy = httpProxy.createProxyServer({ target: kubeApiServer, agent });
+  const proxy = httpProxy.createProxyServer({ target: kubeApiServer, agent, followRedirects: true });
 
-  proxy.on("proxyReq", (proxyReq) => {
+  proxy.on("proxyReq", (proxyReq, req) => {
+    const incomingHeaders = req.headers;
     Object.entries(headers).forEach(([key, value]) => {
-      if (value !== undefined) {
+      if (value === undefined) {
+        return;
+      }
+      const normalizedKey = key.toLowerCase();
+      if (incomingHeaders[normalizedKey] === undefined) {
         proxyReq.setHeader(key, value);
       }
     });
