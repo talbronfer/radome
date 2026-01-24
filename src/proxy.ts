@@ -82,18 +82,28 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
     rejectUnauthorized: requestOptions.rejectUnauthorized as boolean | undefined,
   };
   const agent = kubeApiServer.startsWith("https") ? new https.Agent(agentOptions) : undefined;
-  const proxy = httpProxy.createProxyServer({ target: kubeApiServer, agent, followRedirects: true });
+  const proxy = httpProxy.createProxyServer({
+    target: kubeApiServer,
+    agent,
+    followRedirects: true,
+    changeOrigin: true,
+    xfwd: true,
+  });
 
-  proxy.on("proxyReq", (proxyReq, req) => {
-    const incomingHeaders = req.headers;
+  proxy.on("error", (err, _req, res) => {
+    if (!res || !(res instanceof ServerResponse) || res.headersSent) {
+      return;
+    }
+    res.statusCode = 502;
+    res.end(`Proxy error: ${err?.message ?? "unknown"}`);
+  });
+
+  proxy.on("proxyReq", (proxyReq) => {
     Object.entries(headers).forEach(([key, value]) => {
       if (value === undefined) {
         return;
       }
-      const normalizedKey = key.toLowerCase();
-      if (incomingHeaders[normalizedKey] === undefined) {
-        proxyReq.setHeader(key, value);
-      }
+      proxyReq.setHeader(key, value);
     });
   });
 
