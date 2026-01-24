@@ -63,10 +63,11 @@ const buildInstanceRecord = (service?: V1Service, deployment?: V1Deployment): In
   if (!containerPort || !image) {
     return null;
   }
-  const createdAt =
+  const createdAtValue =
     service?.metadata?.creationTimestamp ??
     deployment?.metadata?.creationTimestamp ??
     new Date().toISOString();
+  const createdAt = createdAtValue instanceof Date ? createdAtValue.toISOString() : createdAtValue;
   const name = resolveInstanceName(service, deployment);
   return {
     id: instanceId,
