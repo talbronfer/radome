@@ -29,6 +29,60 @@ export type CreateInstanceInput = {
 
 const instances = new Map<string, InstanceRecord>();
 const namespace = process.env.RADOME_KUBE_NAMESPACE ?? "default";
+const dockerHubUsername = process.env.RADOME_DOCKERHUB_USERNAME;
+const dockerHubToken = process.env.RADOME_DOCKERHUB_TOKEN;
+const dockerHubSecretName = "radome-dockerhub";
+
+const shouldUseDockerHubAuth = Boolean(dockerHubUsername && dockerHubToken);
+
+const isNotFoundError = (error: unknown) => {
+  if (typeof error !== "object" || !error) {
+    return false;
+  }
+
+  const response = (error as { response?: { statusCode?: number } }).response;
+  return response?.statusCode === 404;
+};
+
+const ensureDockerHubSecret = async () => {
+  if (!shouldUseDockerHubAuth) {
+    return undefined;
+  }
+
+  try {
+    await coreApi.readNamespacedSecret(dockerHubSecretName, namespace);
+    return dockerHubSecretName;
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  const auth = Buffer.from(`${dockerHubUsername}:${dockerHubToken}`).toString("base64");
+  const dockerConfig = {
+    auths: {
+      "https://index.docker.io/v1/": {
+        username: dockerHubUsername,
+        password: dockerHubToken,
+        auth,
+      },
+    },
+  };
+
+  const dockerConfigJson = Buffer.from(JSON.stringify(dockerConfig)).toString("base64");
+
+  await coreApi.createNamespacedSecret(namespace, {
+    metadata: {
+      name: dockerHubSecretName,
+    },
+    type: "kubernetes.io/dockerconfigjson",
+    data: {
+      ".dockerconfigjson": dockerConfigJson,
+    },
+  });
+
+  return dockerHubSecretName;
+};
 
 export const listInstances = () => Array.from(instances.values());
 
@@ -45,6 +99,7 @@ export const createInstance = async (input: CreateInstanceInput) => {
   const deploymentName = `radome-agent-${id}`;
   const serviceName = `radome-agent-${id}`;
   const serviceHost = `${serviceName}.${namespace}.svc.cluster.local`;
+  const dockerHubSecret = await ensureDockerHubSecret();
 
   const deployment: V1Deployment = {
     metadata: {
@@ -67,6 +122,7 @@ export const createInstance = async (input: CreateInstanceInput) => {
           },
         },
         spec: {
+          imagePullSecrets: dockerHubSecret ? [{ name: dockerHubSecret }] : undefined,
           containers: [
             {
               name: "agent",
