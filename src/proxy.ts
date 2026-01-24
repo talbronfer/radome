@@ -1,7 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from "http";
 import https from "https";
 import httpProxy from "http-proxy";
-import { getInstance } from "./instances.js";
+import { getInstanceOrLoad } from "./instances.js";
 import { getKubeProxyConfig } from "./kube.js";
 
 export type ProxyConfig = {
@@ -128,73 +128,78 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
   });
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
-    if (req.method === "OPTIONS") {
-      const responseHeaders: Record<string, string | string[] | undefined> = {};
-      applyCorsHeaders(
-        responseHeaders,
-        req.headers.origin,
-        req.headers["access-control-request-headers"] as string | undefined,
+    void (async () => {
+      if (req.method === "OPTIONS") {
+        const responseHeaders: Record<string, string | string[] | undefined> = {};
+        applyCorsHeaders(
+          responseHeaders,
+          req.headers.origin,
+          req.headers["access-control-request-headers"] as string | undefined,
+        );
+        Object.entries(responseHeaders).forEach(([key, value]) => {
+          if (value !== undefined) {
+            res.setHeader(key, value);
+          }
+        });
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
+      const hostHeader = req.headers.host ?? "";
+      const subdomain = extractSubdomain(hostHeader, baseDomain);
+      const instancePath = extractInstancePath(req.url);
+
+      const instanceId = instancePath?.instanceId ?? subdomain ?? null;
+
+      if (!instanceId) {
+        res.statusCode = 400;
+        res.end("Missing instance identifier in subdomain or /instances/:id path.");
+        return;
+      }
+
+      const instance = await getInstanceOrLoad(instanceId);
+      if (!instance) {
+        res.statusCode = 404;
+        res.end("Instance not found.");
+        return;
+      }
+
+      if (instancePath) {
+        req.url = instancePath.proxiedPath;
+      }
+
+      const kubePath = buildKubeServicePath(instance, req.url);
+      if (!kubePath) {
+        res.statusCode = 500;
+        res.end("Unable to build Kubernetes proxy path.");
+        return;
+      }
+
+      const basePath = buildKubeServiceBasePath(instance);
+      if (!basePath) {
+        res.statusCode = 500;
+        res.end("Unable to build Kubernetes base proxy path.");
+        return;
+      }
+
+      (req as IncomingMessage & { radomeInstanceId?: string }).radomeInstanceId = instance.id;
+      (req as IncomingMessage & { radomeBasePath?: string }).radomeBasePath = basePath;
+      req.url = kubePath;
+
+      proxy.web(
+        req,
+        res,
+        {},
+        (err) => {
+          res.statusCode = 502;
+          res.end(`Proxy error: ${err?.message ?? "unknown"}`);
+        },
       );
-      Object.entries(responseHeaders).forEach(([key, value]) => {
-        if (value !== undefined) {
-          res.setHeader(key, value);
-        }
-      });
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    const hostHeader = req.headers.host ?? "";
-    const subdomain = extractSubdomain(hostHeader, baseDomain);
-    const instancePath = extractInstancePath(req.url);
-
-    const instanceId = subdomain ?? instancePath?.instanceId ?? null;
-
-    if (!instanceId) {
-      res.statusCode = 400;
-      res.end("Missing instance identifier in subdomain or /instances/:id path.");
-      return;
-    }
-
-    const instance = getInstance(instanceId);
-    if (!instance) {
-      res.statusCode = 404;
-      res.end("Instance not found.");
-      return;
-    }
-
-    if (instancePath) {
-      req.url = instancePath.proxiedPath;
-    }
-
-    const kubePath = buildKubeServicePath(instance, req.url);
-    if (!kubePath) {
+    })().catch((error) => {
       res.statusCode = 500;
-      res.end("Unable to build Kubernetes proxy path.");
-      return;
-    }
-
-    const basePath = buildKubeServiceBasePath(instance);
-    if (!basePath) {
-      res.statusCode = 500;
-      res.end("Unable to build Kubernetes base proxy path.");
-      return;
-    }
-
-    (req as IncomingMessage & { radomeInstanceId?: string }).radomeInstanceId = instance.id;
-    (req as IncomingMessage & { radomeBasePath?: string }).radomeBasePath = basePath;
-    req.url = kubePath;
-
-    proxy.web(
-      req,
-      res,
-      {},
-      (err) => {
-        res.statusCode = 502;
-        res.end(`Proxy error: ${err?.message ?? "unknown"}`);
-      },
-    );
+      res.end(`Proxy error: ${(error as Error).message}`);
+    });
   });
 
   server.listen(port, () => {
