@@ -17,7 +17,7 @@ import {
   listUsers,
   updateAllowedImage,
 } from "./db.js";
-import { createInstance, listInstances, removeInstance } from "./instances.js";
+import { createInstance, listInstances, removeInstance, syncInstancesFromCluster } from "./instances.js";
 import { startProxy } from "./proxy.js";
 
 const PORT = Number(process.env.RADOME_CONTROL_PORT ?? 3000);
@@ -240,7 +240,13 @@ app.post("/users", authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.get("/instances", authenticate, (_req, res) => {
+app.get("/instances", authenticate, async (_req, res) => {
+  try {
+    await syncInstancesFromCluster();
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn(`Failed to sync instances from cluster: ${(error as Error).message}`);
+  }
   res.json({
     instances: listInstances(),
   });
