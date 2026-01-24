@@ -1,0 +1,42 @@
+image:
+  repository: radome-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+adminUi:
+  image:
+    repository: radome-admin-ui
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    nextPublicApiBase: ""
+    nextPublicProxyBase: ""
+
+service:
+  type: ClusterIP
+
+adminService:
+  type: ClusterIP
+
+radome:
+  baseDomain: radome.local
+  adminUiOrigin: http://localhost:3001
+  controlPort: 3000
+  proxyPort: 8080
+  dbPath: /data/radome.db
+
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  apiHost: ""
+  proxyHost: ""
+  adminHost: ""
+  tls: []
+
+resources: {}

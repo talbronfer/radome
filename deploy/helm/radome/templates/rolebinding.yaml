@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "radome.fullname" . }}
+  labels:
+    {{- include "radome.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "radome.fullname" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "radome.fullname" . }}

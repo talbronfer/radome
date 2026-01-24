@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "radome.fullname" . }}
+  labels:
+    {{- include "radome.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services", "services/proxy"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
