@@ -1,6 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from "http";
 import https from "https";
 import httpProxy from "http-proxy";
+import type { InstanceRecord } from "./instances.js";
 import { getInstanceOrLoad } from "./instances.js";
 import { getKubeProxyConfig } from "./kube.js";
 
@@ -41,7 +42,7 @@ const extractInstancePath = (reqUrl: string | undefined) => {
   };
 };
 
-const buildKubeServicePath = (instance: ReturnType<typeof getInstance>, requestUrl: string | undefined) => {
+const buildKubeServicePath = (instance: InstanceRecord | undefined, requestUrl: string | undefined) => {
   if (!instance) {
     return null;
   }
@@ -51,7 +52,7 @@ const buildKubeServicePath = (instance: ReturnType<typeof getInstance>, requestU
   return `${basePath}${normalizedPath === "/" ? "/" : normalizedPath}`;
 };
 
-const buildKubeServiceBasePath = (instance: ReturnType<typeof getInstance>) => {
+const buildKubeServiceBasePath = (instance: InstanceRecord | undefined) => {
   if (!instance) {
     return null;
   }
