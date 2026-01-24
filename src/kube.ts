@@ -8,12 +8,20 @@ export type KubeProxyConfig = {
 const kubeConfigPath = process.env.RADOME_KUBE_CONFIG_PATH;
 const kubeInsecureSkipTlsVerify = process.env.RADOME_KUBE_INSECURE_SKIP_TLS_VERIFY;
 
-if (!kubeConfigPath) {
-  throw new Error("RADOME_KUBE_CONFIG_PATH must be set to a kubeconfig file path.");
-}
-
 const kubeConfig = new KubeConfig();
-kubeConfig.loadFromFile(kubeConfigPath);
+if (kubeConfigPath) {
+  kubeConfig.loadFromFile(kubeConfigPath);
+} else {
+  try {
+    kubeConfig.loadFromCluster();
+  } catch (error) {
+    throw new Error(
+      `Failed to load Kubernetes config from cluster. Set RADOME_KUBE_CONFIG_PATH to a kubeconfig file path. ${
+        (error as Error).message
+      }`,
+    );
+  }
+}
 
 export const getKubeProxyConfig = (): KubeProxyConfig => {
   const requestOptions: Record<string, unknown> = { headers: {} };

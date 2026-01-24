@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "radome.fullname" . }}
+  labels:
+    {{- include "radome.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "radome.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "radome.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "radome.fullname" . }}
+      containers:
+        - name: radome-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: control
+              containerPort: {{ .Values.radome.controlPort }}
+            - name: proxy
+              containerPort: {{ .Values.radome.proxyPort }}
+          env:
+            - name: RADOME_CONTROL_PORT
+              value: "{{ .Values.radome.controlPort }}"
+            - name: RADOME_PROXY_PORT
+              value: "{{ .Values.radome.proxyPort }}"
+            - name: RADOME_BASE_DOMAIN
+              value: "{{ .Values.radome.baseDomain }}"
+            - name: RADOME_ADMIN_UI_ORIGIN
+              value: "{{ .Values.radome.adminUiOrigin }}"
+            - name: RADOME_KUBE_NAMESPACE
+              value: "{{ .Release.Namespace }}"
+            - name: RADOME_DB_PATH
+              value: "{{ .Values.radome.dbPath }}"
+          volumeMounts:
+            - name: radome-data
+              mountPath: {{ .Values.radome.dbPath | dir }}
+      volumes:
+        - name: radome-data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "radome.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

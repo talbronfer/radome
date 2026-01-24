@@ -1,0 +1,10 @@
+node_modules
+admin-ui/node_modules
+admin-ui/.next
+admin-ui/.turbo
+dist
+data
+.git
+.DS_Store
+npm-debug.log
+Dockerfile

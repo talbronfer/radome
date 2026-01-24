@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "radome.fullname" . }}
+  labels:
+    {{- include "radome.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "radome.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: control
+      port: {{ .Values.radome.controlPort }}
+      targetPort: control
+    - name: proxy
+      port: {{ .Values.radome.proxyPort }}
+      targetPort: proxy

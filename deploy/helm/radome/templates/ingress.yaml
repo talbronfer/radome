@@ -1,0 +1,57 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "radome.fullname" . }}
+  labels:
+    {{- include "radome.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- if .Values.ingress.apiHost }}
+    - host: {{ .Values.ingress.apiHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "radome.fullname" . }}
+                port:
+                  name: control
+    {{- end }}
+    {{- if .Values.ingress.proxyHost }}
+    - host: {{ .Values.ingress.proxyHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "radome.fullname" . }}
+                port:
+                  name: proxy
+    {{- end }}
+    {{- if .Values.ingress.adminHost }}
+    - host: {{ .Values.ingress.adminHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "radome.fullname" . }}-admin
+                port:
+                  name: http
+    {{- end }}
+{{- end }}
