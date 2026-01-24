@@ -91,7 +91,7 @@ export const startProxy = ({ baseDomain, port }: ProxyConfig) => {
   });
 
   proxy.on("error", (err, _req, res) => {
-    if (!res || res.headersSent) {
+    if (!res || !(res instanceof ServerResponse) || res.headersSent) {
       return;
     }
     res.statusCode = 502;
